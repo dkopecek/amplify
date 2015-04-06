@@ -1,0 +1,59 @@
+header {
+   #include <build-config.h>
+}
+
+start = AMPUSH;
+
+mode AMPUSH :
+     <entry: STRING_READER>
+     <exit: STRING_READER>
+{
+	<<EOF>> => AMPUSH_TOKEN_TERMINATION;
+
+	[ \t\r\n]+ { }
+
+	[_a-zA-Z][_a-zA-Z0-9\-./~!@#$%^&*+=]* => AMPUSH_TOKEN_NAME(Lexeme);
+
+	#[TF] => AMPUSH_TOKEN_BOOLEAN(Lexeme);
+
+	[\-]?"0"[xX][0-9a-fA-F]+(\.[0-9a-fA-F]+)?([pP][\-+][0-9a-fA-F]+)? => AMPUSH_TOKEN_HEXFLOAT(Lexeme);
+	[\-]?[0-9]+\.[0-9]* => AMPUSH_TOKEN_FLOAT(Lexeme);
+	[\-]?[0-9]+ => AMPUSH_TOKEN_INTEGER(Lexeme);
+
+	"(" => AMPUSH_TOKEN_LIST_BEGIN;
+	")" => AMPUSH_TOKEN_LIST_END;
+
+	"\"" {
+	     self_send(AMPUSH_TOKEN_STRING_BEGIN);
+	     self << STRING_READER;
+	     RETURN;
+	}
+}
+
+mode STRING_READER :
+     <entry: AMPUSH>
+     <exit: AMPUSH>
+{
+	on_entry { self_accumulator_clear(); }
+	on_exit {
+		self_accumulator_flush(AMPUSH_TOKEN_STRING);
+		self_send(AMPUSH_TOKEN_STRING_END);
+	}
+
+	// Escaped double quote
+	"\\\"" { self_accumulator_add(Lexeme, LexemeEnd); }
+
+	// Escaped escape character
+	"\\\\" { self_accumulator_add(Lexeme, LexemeEnd); }
+
+	"\"" {
+	     self << AMPUSH;
+	     RETURN;
+	}
+
+	. { self_accumulator_add(Lexeme, LexemeEnd); }
+
+	<<FAIL>> {
+		 self_accumulator_add(Lexeme, LexemeEnd);
+	}
+}
